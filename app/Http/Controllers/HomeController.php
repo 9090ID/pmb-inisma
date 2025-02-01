@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use Illuminate\Http\Request;
 use App\Models\Order;
+use App\Models\Pendaftaran;
 use Midtrans\Snap;
 use Midtrans\Config;
 use App\Services\MidtransService;
@@ -14,50 +15,47 @@ class HomeController extends Controller
     {
         return view('home');
     }
-    
+
     public function masterAdmin()
     {
         return view('pageadmin.index');
     }
-    
+
     public function admin()
     {
         return view('admin');
     }
-    
+
     public function mahasiswa()
     {
         $user = auth()->user();
 
-    // Ambil semua order yang terkait dengan pengguna yang sedang login
-    $orders = Order::with(['pendaftaran.jalurmasuk'])
-    ->where('user_id', $user->id)
-    ->select('id', 'user_id', 'snap_token', 'payment_status', 'expires_at') // Pastikan snap_token disertakan
-    ->get();
+        // Ambil semua pendaftaran pengguna yang belum memiliki order
+        $pendaftarans = Pendaftaran::with('jalurmasuk')
+            ->where('user_id', $user->id)
+            ->doesntHave('orders')
+            ->get();
 
-    foreach ($orders as $order) {
-        // Cek jika order sudah kadaluarsa
-        if ($order->expires_at && $order->expires_at < now()) {
-            $order->update(['payment_status' => 'Kadaluarsa']);
-        }
-
-        // Siapkan token Snap untuk order yang masih pending
-        if ($order->payment_status == 'Menunggu Pembayaran' && !$order->snap_token) {
-            // Konfigurasi Midtrans
-            MidtransService::configure();
-
-            $pendaftaran = $order->pendaftaran;
+        foreach ($pendaftarans as $pendaftaran) {
             $jalurMasuk = $pendaftaran->jalurmasuk;
 
             // Validasi jika data tidak ditemukan
-            if (!$pendaftaran || !$jalurMasuk) {
-                continue; // Lewatkan order ini jika data tidak lengkap
+            if (!$jalurMasuk) {
+                continue; // Lewatkan jika data tidak lengkap
             }
+
+            // Kondisi jika biaya pendaftaran adalah 0
+            if ($jalurMasuk->biaya_pendaftaran == 0) {
+                continue; // Lewatkan proses pembayaran jika biaya pendaftaran 0
+            }
+
+            // Konfigurasi Midtrans
+            Config::$serverKey = 'SB-Mid-server-bfk8clRtIGPqE8xfhuf5jziX';  // Server Key
 
             // Buat transaksi dengan informasi yang sesuai
             $transactionDetails = [
-                'order_id' => $order->number,
-                'gross_amount' => $jalurMasuk->biaya_pendaftaran,
+                'order_id' => uniqid(),
+                'gross_amount' => $jalurMasuk->biaya_pendaftaran, // Biaya pendaftaran
             ];
 
             $itemDetails = [
@@ -80,14 +78,75 @@ class HomeController extends Controller
             ];
 
             // Dapatkan token pembayaran
-            $order->snap_token = Snap::getSnapToken($transactionData);
-            $order->save();
+            $snapToken = Snap::getSnapToken($transactionData);
+
+            // Simpan order baru
+            Order::create([
+                'user_id' => $user->id,
+                'pendaftaran_id' => $pendaftaran->id,
+                'number' => $transactionDetails['order_id'],
+                'snap_token' => $snapToken,
+                'payment_status' => 'Menunggu Pembayaran',
+                'total_price' => $jalurMasuk->biaya_pendaftaran, // Ambil biaya langsung dari JalurMasuk
+                'expires_at' => now()->addHours(24),
+            ]);
         }
+
+        // Ambil semua order pengguna
+        $orders = Order::with(['pendaftaran.jalurmasuk'])
+            ->where('user_id', $user->id)
+            ->get();
+
+        return view('pagemhs.index', compact('orders'));
     }
 
-    return view('pagemhs.index', compact('orders'));
+
+    public function regeneratePayment(Request $request)
+    {
+        $order = Order::findOrFail($request->id);
+
+        if (!$order->pendaftaran || !$order->pendaftaran->jalurmasuk) {
+            return back()->with('error', 'Data pendaftaran tidak lengkap.');
+        }
+
+        // Konfigurasi Midtrans
+        Config::$serverKey = 'SB-Mid-server-bfk8clRtIGPqE8xfhuf5jziX';
+
+        $transactionDetails = [
+            'order_id' => uniqid(),
+            'gross_amount' => $order->pendaftaran->jalurmasuk->biaya_pendaftaran,
+        ];
+
+        $itemDetails = [
+            [
+                'id' => $order->pendaftaran->nomor_registrasi,
+                'price' => $order->pendaftaran->jalurmasuk->biaya_pendaftaran,
+                'quantity' => 1,
+                'name' => $order->pendaftaran->jalurmasuk->nm_jalur,
+            ],
+        ];
+
+        $transactionData = [
+            'transaction_details' => $transactionDetails,
+            'item_details' => $itemDetails,
+            'customer_details' => [
+                'first_name' => $order->user->name,
+                'email' => $order->user->email,
+                'phone' => $order->pendaftaran->nomorhp,
+            ],
+        ];
+
+        // Generate snap token baru
+        $snapToken = Snap::getSnapToken($transactionData);
+
+        // Update order dengan snap_token baru
+        $order->update([
+            'number' => $transactionDetails['order_id'],
+            'snap_token' => $snapToken,
+            'payment_status' => 'Menunggu Pembayaran',
+            'expires_at' => now()->addHours(24),
+        ]);
+
+        return back()->with('success', 'Pembayaran baru telah dibuat. Silakan lanjutkan pembayaran.');
     }
 }
-
-    
-

@@ -155,7 +155,7 @@
                                 {{-- <label for="input_tahfiz">Input Kelas Tahfiz</label> --}}
                                 <div class="mb-3">
                                     <label for="jumlah_juz">Jumlah Hafalan</label>
-                                <select class="form-control" id="jumlah_juz" name="jumlah_juz" required>
+                                <select class="form-control" id="jumlah_juz" name="jumlah_juz">
                                     <option value="">Pilih Jumlah Juz</option>
                                     <option value="1">1 Juz</option>
                                     <option value="5">5 Juz</option>
@@ -170,7 +170,7 @@
                                 
                                 <div class="mb-3">
                                     <label for="sertifikat">Upload Bukti Sertifikat</label>
-                                <input type="file" class="form-control" id="sertifikat" name="sertifikat" accept=".pdf" required>
+                                <input type="file" class="form-control" id="sertifikat" name="sertifikat" accept=".pdf">
                                 </div>
                                 <!-- Input untuk upload file bukti sertifikat -->
                                 

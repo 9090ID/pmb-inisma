@@ -25,7 +25,36 @@
               <span class="hide-menu">Dashboard</span>
             </a>
           </li>
-          <li class="nav-small-cap">
+          @php
+    // Ambil status pembayaran dari model Order
+    $order = Auth::user()->orders()->first(); // Asumsi bahwa pengguna memiliki relasi dengan order
+@endphp
+<li class="sidebar-item">
+  @if ($order && ($order->payment_status == 'Sudah Dibayar' || $order->payment_status == 'Gratis'))
+      <a class="sidebar-link" href="/identitas" aria-expanded="false">
+          <span>
+              <i class="ti ti-user"></i>
+          </span>
+          <span class="hide-menu">Identitas Pribadi</span>
+      </a>
+  @else
+      <a class="sidebar-link" href="#" aria-expanded="false" style="pointer-events: none; opacity: 0.5;">
+          <span>
+              <i class="ti ti-user"></i>
+          </span>
+          <span class="hide-menu">Identitas Pribadi</span>
+      </a>
+  @endif
+</li>
+          {{-- <li class="sidebar-item">
+            <a class="sidebar-link" href="/identitas" aria-expanded="false">
+              <span>
+                <i class="ti ti-user"></i>
+              </span>
+              <span class="hide-menu">Identitas Pribadi</span>
+            </a>
+          </li> --}}
+          {{-- <li class="nav-small-cap">
             <i class="ti ti-dots nav-small-cap-icon fs-4"></i>
             <span class="hide-menu">UI COMPONENTS</span>
           </li>
@@ -120,7 +149,7 @@
               <img src="{{asset('mahasiswa/images/backgrounds/rocket.png')}}" alt="" class="img-fluid">
             </div>
           </div>
-        </div>
+        </div> --}}
       </nav>
       <!-- End Sidebar navigation -->
     </div>

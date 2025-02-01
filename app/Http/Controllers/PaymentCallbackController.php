@@ -16,57 +16,84 @@ class PaymentCallbackController extends Controller
 {
     public function notification(Request $request)
     {
-        // Konfigurasi Midtrans
-    MidtransService::configure();
+       $payload = $request->all();
 
-    // Tambahkan log untuk debugging
-    Log::info('Midtrans Notification:', $request->all());
+// Log the incoming notification payload
+Log::info('Incoming Midtrans Notification:', [
+    'payload' => $payload
+]);
 
-    try {
-        // Ambil notifikasi dari Midtrans
-        $notification = new \Midtrans\Notification();
+$orderId = $payload['order_id'];
+$statusCode = $payload['status_code'];
+$grossAmount = $payload['gross_amount'];
+$reqSignature = $payload['signature_key'];
 
-        // Ambil detail transaksi
-        $orderId = $notification->order_id;
-        $transactionStatus = $notification->transaction_status;
-        $paymentType = $notification->payment_type;
-        $fraudStatus = $notification->fraud_status;
+// Log the details for signature validation
+Log::info('Validating signature:', [
+    'orderId' => $orderId,
+    'statusCode' => $statusCode,
+    'grossAmount' => $grossAmount
+]);
 
-        // Cari order berdasarkan order_id
-        $order = Order::where('number', $orderId)->first();
+// Generate the signature from the payload and compare it with the received signature
+   $signature = hash('sha512', $orderId . $statusCode . $grossAmount . config('midtrans.server_key'));
 
-        if (!$order) {
-            return response()->json(['message' => 'Order tidak ditemukan'], 404);
-        }
 
-        // Perbarui status pembayaran
-        if ($transactionStatus == 'capture') {
-            if ($fraudStatus == 'challenge') {
-                $order->payment_status = 'Pending (Challenge)';
-            } else {
-                $order->payment_status = 'Sudah Dibayar';
-            }
-        } elseif ($transactionStatus == 'settlement') {
-            $order->payment_status = 'Sudah Dibayar';
-        } elseif ($transactionStatus == 'pending') {
-            $order->payment_status = 'Menunggu Pembayaran';
-        } elseif ($transactionStatus == 'cancel') {
-            $order->payment_status = 'Dibatalkan';
-        } elseif ($transactionStatus == 'expire') {
-            $order->payment_status = 'Kadaluarsa';
-        } elseif ($transactionStatus == 'deny') {
-            $order->payment_status = 'Ditolak';
-        } elseif ($transactionStatus == 'refund') {
-            $order->payment_status = 'Dikembalikan';
-        }
+// Log signature comparison
+Log::info('Signature Comparison:', [
+    'generated_signature' => $signature,
+    'received_signature' => $reqSignature
+]);
 
-        $order->save();
+// If the signatures don't match, return an error
+if ($signature != $reqSignature) {
+    Log::error('Invalid signature for Order ID', ['orderId' => $orderId]);
+    return response()->json([
+        'status' => 'error',
+        'message' => 'Invalid signature'
+    ], 401);
+}
 
-        return response()->json(['message' => 'Notifikasi berhasil diproses']);
-    } catch (\Exception $e) {
-        Log::error('Midtrans Notification Error:', ['error' => $e->getMessage()]);
-        return response()->json(['message' => 'Terjadi kesalahan saat memproses notifikasi'], 500);
-    }
+// Extract transaction status
+$transactionStatus = $payload['transaction_status'];
+Log::info('Transaction Status:', ['transactionStatus' => $transactionStatus]);
+
+// Look for the order in the database using 'number' field
+$order = Order::where('number', $orderId)->first();
+
+// If order is not found, log and return an error
+if(!$order){
+    Log::error('Order not found for Order ID', ['orderId' => $orderId]);
+    return response()->json([
+        'status' => 'error',
+        'message' => 'Invalid Order'
+    ], 400);
+}
+
+// Log the order retrieval
+Log::info('Order found:', ['order' => $order]);
+
+// Update the order status based on transaction status
+if ($transactionStatus == 'settlement') {
+    $order->payment_status = 'Sudah Dibayar';
+    $order->save();
+    Log::info('Order updated to "Sudah Dibayar"', ['orderId' => $orderId]);
+} elseif ($transactionStatus == 'expire') {
+    $order->payment_status = 'Kadaluarsa';
+    $order->save();
+    Log::info('Order updated to "Kadaluarsa"', ['orderId' => $orderId]);
+}elseif ($transactionStatus == 'pending') {
+    $order->payment_status = 'Menunggu Pembayaran';
+    $order->save();
+    Log::info('Order updated to "Menunggu Pembayaran"', ['orderId' => $orderId]);
+}
+
+// Return a success response
+return response()->json([
+    'status' => 'success',
+    'message' => 'Notification success'
+]);
+
     }
 
 

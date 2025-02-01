@@ -8,6 +8,7 @@ class MidtransService
     public static function configure()
     {
         Config::$serverKey = env('MIDTRANS_SERVER_KEY');
+        Config::$clientKey = env('MIDTRANS_CLIENT_KEY');
         Config::$isProduction = env('MIDTRANS_IS_PRODUCTION', false);
         Config::$isSanitized = true; // Untuk sanitasi data otomatis
         Config::$is3ds = true;       // Aktifkan 3DS untuk kartu kredit

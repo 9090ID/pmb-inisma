@@ -24,6 +24,9 @@
                   <img src="{{asset('inisma/logo.webp')}}" width="80" alt="">
                 </a>
                 <h3 class="text-center">Login PMB</h3>
+                <div class="alert alert-danger text-center" role="alert">
+                Silahkan cek email anda saat Anda Mendaftar untuk mendapatkan <strong>Username dan Password</strong>
+                </div>
                 <form method="POST" action="{{ route('login') }}">
                     @csrf
                   <div class="mb-3">

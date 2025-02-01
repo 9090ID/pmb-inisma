@@ -33,7 +33,7 @@ class RekapController extends Controller
                 case 'Kadaluarsa':
                     return '<span class="badge bg-warning">Kadaluarsa</span>';
                 default:
-                    return '<span class="badge bg-secondary">Status Tidak Diketahui</span>';
+                    return '<span class="badge bg-secondary">Tidak ada Pembayaran </span>';
             }
         })
         ->addColumn('total_price', function ($pendaftar) {
@@ -42,7 +42,7 @@ class RekapController extends Controller
             $status = $order ? $order->payment_status : 'Menunggu Pembayaran';
     
             // Jika status adalah 'Kadaluarsa' atau 'Menunggu Pembayaran', kembalikan 0
-            if ($status === 'Kadaluarsa' || $status === 'Menunggu Pembayaran') {
+            if ($status === 'Gratis') {
                 return 'Rp. 0.00'; // Tampilkan 0 jika kadaluarsa atau menunggu pembayaran
             }
     

@@ -44,20 +44,20 @@ class PendaftaranController extends Controller
             'alamat.not_regex' => 'Alamat tidak boleh mengandung tag HTML.',
             'jalurmasuk_id.exists' => 'Jalur masuk yang dipilih tidak valid.',
         ]);
-    
+
         $jalurMasuk = JalurMasuk::find($request->jalurmasuk_id);
-    
+
         // Validasi untuk Jalur Tahfizh
         if ($jalurMasuk && $jalurMasuk->nm_jalur === 'Jalur Tahfizh') {
             $validator->after(function ($validator) use ($request) {
                 if (!$request->has('jumlah_juz') || is_null($request->jumlah_juz)) {
                     $validator->errors()->add('jumlah_juz', 'Jumlah Juz harus dipilih untuk jalur Tahfizh.');
                 }
-    
+
                 if (!$request->hasFile('sertifikat')) {
                     $validator->errors()->add('sertifikat', 'Sertifikat harus diunggah untuk jalur Tahfizh.');
                 }
-    
+
                 if ($request->hasFile('sertifikat') && $request->file('sertifikat')->isValid()) {
                     $fileSize = $request->file('sertifikat')->getSize();
                     if ($fileSize > 10 * 1024 * 1024) {
@@ -66,12 +66,12 @@ class PendaftaranController extends Controller
                 }
             });
         }
-    
+
         if ($validator->fails()) {
             $errors = $validator->errors()->all();
             return response()->json(['message' => implode("\n", $errors)], 422);
         }
-    
+
         $password = Str::random(8);
         $user = User::create([
             'name' => $request->namalengkap,
@@ -79,18 +79,18 @@ class PendaftaranController extends Controller
             'password' => Hash::make($password),
             'role' => 'mahasiswa',
         ]);
-    
+
         $tanggalLahir = Carbon::parse($request->tanggallahir)->format('Ymd');
         $totalCount = Pendaftaran::count();
         $nomorRegistrasi = $tanggalLahir . '-' . str_pad($totalCount + 1, 3, '0', STR_PAD_LEFT);
-    
+
         // Menyimpan data pendaftaran dengan sertifikat dan jumlah juz
         $sertifikatPath = null;
         if ($request->hasFile('sertifikat')) {
             // Menyimpan file sertifikat
             $sertifikatPath = $request->file('sertifikat')->store('sertifikat', 'public');
         }
-    
+
         $pendaftaran = Pendaftaran::create([
             'namalengkap' => $request->namalengkap,
             'tanggallahir' => $request->tanggallahir,
@@ -104,10 +104,21 @@ class PendaftaranController extends Controller
             'jumlah_juz' => $jalurMasuk->nm_jalur === 'Jalur Tahfizh' ? $request->jumlah_juz : null,
             'sertifikat' => $jalurMasuk->nm_jalur === 'Jalur Tahfizh' ? $sertifikatPath : null, // Path sertifikat
         ]);
-    
+
+        if ($jalurMasuk && $jalurMasuk->biaya_pendaftaran == 0){
+            Order::create([
+                'number' => uniqid(), // Nomor unik untuk order
+                'total_price' => 0, // Gratis
+                'payment_status' => 'Gratis', // Status pembayaran
+                'snap_token' => null, // Tidak memerlukan Snap token
+                'user_id' => $user->id, // Hubungkan dengan user
+                'expires_at' => null, // Tidak memiliki masa kadaluarsa
+            ]);
+        }
+
         // Buat Order dan Snap Token Midtrans
-        $this->createOrder($user, $request, $pendaftaran);
-    
+        // $this->createOrder($user, $request, $pendaftaran);
+
         // Kirim email konfirmasi
         try {
             Mail::to($user->email)->send(new KonfirmasiPendaftaran($user->name, $request->email, $password, $nomorRegistrasi));
@@ -115,93 +126,93 @@ class PendaftaranController extends Controller
             Log::error('Gagal mengirim email:', ['error' => $e->getMessage()]);
             return response()->json(['message' => 'Gagal mengirim email. Silakan coba lagi nanti.'], 500);
         }
-    
+
         return response()->json([
             'message' => 'Pendaftaran berhasil! Silakan cek email Anda untuk login dan lakukan pembayaran.',
             'nomor_registrasi' => $nomorRegistrasi,
         ], 200);
     }
-    
-    private function createOrder($user, $request, $pendaftaran)
-    {
-        // Konfigurasi Midtrans
-        Config::$serverKey = 'SB-Mid-server-bfk8clRtIGPqE8xfhuf5jziX';
-        Config::$isProduction = false;
 
-        // Ambil jalur masuk berdasarkan ID yang dipilih
-        $jalurMasuk = JalurMasuk::find($request->jalurmasuk_id);
+    // private function createOrder($user, $request, $pendaftaran)
+    // {
+    //     // Konfigurasi Midtrans
+    //     Config::$serverKey = 'SB-Mid-server-bfk8clRtIGPqE8xfhuf5jziX';
+    //     Config::$isProduction = false;
 
-        if (!$jalurMasuk) {
-            throw new \Exception('Jalur masuk tidak ditemukan.');
-        }
+    //     // Ambil jalur masuk berdasarkan ID yang dipilih
+    //     $jalurMasuk = JalurMasuk::find($request->jalurmasuk_id);
 
-        // Periksa apakah jalur adalah Tahfiz
-        if ($jalurMasuk->nm_jalur === 'Jalur Tahfizh') {
-            // Jika jalur Tahfiz, buat order dengan status Gratis
-            Order::create([
-                'number' => uniqid(), // Nomor unik untuk order
-                'total_price' => 0, // Gratis
-                'payment_status' => 'Gratis', // Status pembayaran
-                'snap_token' => '0', // Tidak memerlukan Snap token
-                'user_id' => $user->id, // Hubungkan dengan user
-                'expires_at' => null, // Tidak memiliki masa kadaluarsa
-            ]);
-        } else {
-            // Jika bukan Tahfiz, buat order dengan snap token
-            $expiryDurationInSeconds = 60; // 1 menit
+    //     if (!$jalurMasuk) {
+    //         throw new \Exception('Jalur masuk tidak ditemukan.');
+    //     }
 
-            // Buat transaksi
-            $transactionDetails = [
-                'order_id' => uniqid(),
-                'gross_amount' => $jalurMasuk->biaya_pendaftaran, // Ambil dari jalur masuk
-                'expiry' => [
-                    'start_time' => now()->toIso8601String(), // Waktu mulai transaksi
-                    'duration' => $expiryDurationInSeconds, // Durasi transaksi dalam detik
-                ]
-            ];
+    //     // Periksa apakah jalur adalah Tahfiz
+    //     if ($jalurMasuk->nm_jalur === 'Jalur Tahfizh') {
+    //         // Jika jalur Tahfiz, buat order dengan status Gratis
+    //         Order::create([
+    //             'number' => uniqid(), // Nomor unik untuk order
+    //             'total_price' => 0, // Gratis
+    //             'payment_status' => 'Gratis', // Status pembayaran
+    //             'snap_token' => '0', // Tidak memerlukan Snap token
+    //             'user_id' => $user->id, // Hubungkan dengan user
+    //             'expires_at' => null, // Tidak memiliki masa kadaluarsa
+    //         ]);
+    //     } else {
+    //         // Jika bukan Tahfiz, buat order dengan snap token
+    //         $expiryDurationInSeconds = 60; // 1 menit
 
-            $itemDetails = [
-                [
-                    'id' => $pendaftaran->nomor_registrasi, // Menggunakan nomor registrasi sebagai ID
-                    'price' => $jalurMasuk->biaya_pendaftaran, // Ambil dari jalur masuk
-                    'quantity' => 1,
-                    'name' => $jalurMasuk->nm_jalur, // Nama kelas yang dipilih
-                ],
-            ];
+    //         // Buat transaksi
+    //         $transactionDetails = [
+    //             'order_id' => uniqid(),
+    //             'gross_amount' => $jalurMasuk->biaya_pendaftaran, // Ambil dari jalur masuk
+    //             'expiry' => [
+    //                 'start_time' => now()->toIso8601String(), // Waktu mulai transaksi
+    //                 'duration' => $expiryDurationInSeconds, // Durasi transaksi dalam detik
+    //             ]
+    //         ];
 
-            $transactionData = [
-                'transaction_details' => $transactionDetails,
-                'item_details' => $itemDetails,
-                'customer_details' => [
-                    'first_name' => $request->namalengkap,
-                    'email' => $request->email,
-                    'phone' => $request->nomorhp,
-                    'billing_address' => [
-                        'address' => $request->alamat,
-                    ],
-                    'shipping_details' => [
-                        'address' => $pendaftaran->alamat, // Ambil dari pendaftaran
-                    ],
-                ],
-            ];
+    //         $itemDetails = [
+    //             [
+    //                 'id' => $pendaftaran->nomor_registrasi, // Menggunakan nomor registrasi sebagai ID
+    //                 'price' => $jalurMasuk->biaya_pendaftaran, // Ambil dari jalur masuk
+    //                 'quantity' => 1,
+    //                 'name' => $jalurMasuk->nm_jalur, // Nama kelas yang dipilih
+    //             ],
+    //         ];
 
-            // Dapatkan token pembayaran
-            try {
-                $snapToken = Snap::getSnapToken($transactionData);
-            } catch (\Exception $e) {
-                // Tangani kesalahan jika terjadi
-                return response()->json(['error' => $e->getMessage()], 400);
-            }
+    //         $transactionData = [
+    //             'transaction_details' => $transactionDetails,
+    //             'item_details' => $itemDetails,
+    //             'customer_details' => [
+    //                 'first_name' => $request->namalengkap,
+    //                 'email' => $request->email,
+    //                 'phone' => $request->nomorhp,
+    //                 'billing_address' => [
+    //                     'address' => $request->alamat,
+    //                 ],
+    //                 'shipping_details' => [
+    //                     'address' => $pendaftaran->alamat, // Ambil dari pendaftaran
+    //                 ],
+    //             ],
+    //         ];
 
-            // Simpan data order
-            Order::create([
-                'number' => $transactionDetails['order_id'],
-                'total_price' => $transactionDetails['gross_amount'],
-                'payment_status' => 'Menunggu Pembayaran', // Status awal
-                'snap_token' => $snapToken,
-                'user_id' => $user->id, // Hubungkan dengan user
-                'expires_at' => now()->addSeconds($expiryDurationInSeconds), // Waktu kadaluarsa
-            ]);
-        }
-    }
+    //         // Dapatkan token pembayaran
+    //         try {
+    //             $snapToken = Snap::getSnapToken($transactionData);
+    //         } catch (\Exception $e) {
+    //             // Tangani kesalahan jika terjadi
+    //             return response()->json(['error' => $e->getMessage()], 400);
+    //         }
+
+    //         // Simpan data order
+    //         Order::create([
+    //             'number' => $transactionDetails['order_id'],
+    //             'total_price' => $transactionDetails['gross_amount'],
+    //             'payment_status' => 'Menunggu Pembayaran', // Status awal
+    //             'snap_token' => $snapToken,
+    //             'user_id' => $user->id, // Hubungkan dengan user
+    //             'expires_at' => now()->addSeconds($expiryDurationInSeconds), // Waktu kadaluarsa
+    //         ]);
+    //     }
+    // }
 }

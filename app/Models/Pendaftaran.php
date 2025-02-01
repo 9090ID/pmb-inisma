@@ -49,4 +49,8 @@ class Pendaftaran extends Model
     {
         return $this->belongsTo(JalurMasuk::class, 'jalurmasuk_id');
     }
+    public function identitasDetail()
+    {
+        return $this->hasOne(IdentitasDetail::class);
+    }
 }
